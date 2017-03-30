@@ -1,0 +1,91 @@
+{
+    "__": " USAGE:                                                            ",
+    "__": "   `~/bin/packer build -var-file=vars-aws.json simp-aws.json`      ",
+    "__": "                                                                   ",
+    "__": " NOTES:                                                            ",
+    "__": " Leverage the ks-aws file to perform all tasks up to boot-complete ",
+
+  "builders": [
+    {
+      "type": "virtualbox-iso",
+      "guest_os_type": "RedHat_64",
+      "iso_url":       "{{user `iso_url`}}",
+      "iso_checksum":    "{{user `iso_checksum`}}",
+      "iso_checksum_type": "{{user `iso_checksum_type`}}",
+      "disk_size": "{{user `disk_size`}}",
+      "http_directory": "./",
+      "vboxmanage": [
+        ["modifyvm", "{{.Name}}", "--memory", "{{user `memory_amt`}}"],
+        ["modifyvm", "{{.Name}}", "--cpus", "{{user `cpu_count`}}"]
+      ],
+
+      "format": "ova",
+
+      "ssh_username": "vagrant",
+      "ssh_password": "UserPassword",
+      "ssh_wait_timeout": "600s",
+
+      "ssh_host_port_min": 2222,
+      "ssh_host_port_max": 2222,
+
+      "boot_wait": "10s",
+      "boot_command": [
+ 
+        "<wait>",
+        "vmlinuz inst.ks=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ks-vagrant.cfg initrd=initrd.img fips=0",
+        "<enter><wait>"
+       ],
+      "shutdown_command": "echo 'vagrant' | sudo -S shutdown -P now"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "remote_path": "/var/local/vagrant/update.sh",
+      "execute_command": "sudo chmod +x {{.Path}}; {{.Vars}} sudo bash '{{.Path}}'",
+      "inline": [
+        "yum update -y",
+        "yum install -y gcc make kernel-headers kernel-devel tree htop ncdu dkms"
+      ]
+    },
+    {
+      "type": "shell",
+      "remote_path": "/var/local/vagrant/firewall-setup.sh",
+      "execute_command": "sudo chmod +x {{.Path}}; {{.Vars}} sudo bash '{{.Path}}'",
+      "inline": [
+        "systemctl stop firewalld",
+        "systemctl disable firewalld"
+      ]
+    },
+    {
+      "type": "shell",
+      "remote_path": "/var/local/vagrant/set-vagrant-ssh-stuff.sh",
+      "execute_command": "sudo chmod +x {{.Path}}; {{.Vars}} sudo bash '{{.Path}}'",
+      "inline": [
+        "mkdir /var/local/vagrant/.ssh",
+        "chown vagrant:vagrant /var/local/vagrant/.ssh",
+        "chmod 750 /var/local/vagrant/.ssh",
+        "touch /var/local/vagrant/.ssh/authorized_keys",
+        "chown vagrant:vagrant /var/local/vagrant/.ssh/authorized_keys",
+        "chmod 640 /var/local/vagrant/.ssh/authorized_keys",
+        "echo {{user `ssh_pub_key`}} >> /var/local/vagrant/.ssh/authorized_keys",
+
+        "echo 'AllowUsers vagrant' >> /etc/ssh/sshd_config",
+        "chcon -R -t ssh_home_t /var/local/vagrant/.ssh/"
+      ]
+    }
+  ],
+  "post-processors": [
+		[
+    	{
+				"type": "vagrant",
+        "keep_input_artifact": false,
+        "compression_level": "6",
+        "output": "{{user `output_directory`}}/{{user `box_distro_release`}}.box",
+        "only": [
+        	"virtualbox-iso"
+        ]
+			}
+    ]
+	]
+}
